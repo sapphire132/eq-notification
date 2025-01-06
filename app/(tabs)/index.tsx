@@ -1,74 +1,240 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import {
+  Image,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useEffect, useState } from "react";
+import PushNotification from "react-native-push-notification"; // Import push notification
+import { HelloWave } from "@/components/HelloWave";
+import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
+import MapView, { Marker } from "react-native-maps";
+import Icon from "react-native-vector-icons/Ionicons";
+import moment from "moment"; // Import moment
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+// Configure Push Notifications
+PushNotification.configure({
+  onNotification: function (notification) {
+    console.log("NOTIFICATION:", notification);
+  },
+});
 
 export default function HomeScreen() {
+  const [earthquakes, setEarthquakes] = useState([]);
+  const [selectedQuake, setSelectedQuake] = useState(null);
+
+  const fetchEarthquakes = async () => {
+    try {
+      const response = await fetch(
+        "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2025-01-01&endtime=2025-01-08&minlatitude=3.4&maxlatitude=15.0&minlongitude=33.0&maxlongitude=48.0"
+      );
+      const text = await response.text();
+      console.log("Response Text:", text);
+
+      const data = JSON.parse(text);
+      setEarthquakes(data.features);
+
+      // Check if there's a significant earthquake and notify
+      data.features.forEach((quake) => {
+        if (quake.properties.mag >= 5.0) {
+          // Adjust the magnitude threshold as needed
+          sendNotification(quake);
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching earthquake data:", error);
+    }
+  };
+
+  const sendNotification = (quake) => {
+    PushNotification.localNotification({
+      title: "Earthquake Alert!",
+      message: `Magnitude: ${quake.properties.mag} at ${quake.properties.place}`,
+      playSound: true,
+      soundName: "default",
+    });
+  };
+
+  useEffect(() => {
+    fetchEarthquakes();
+    const interval = setInterval(fetchEarthquakes, 60000); // Fetch new data every minute
+    return () => clearInterval(interval); // Cleanup interval on unmount
+  }, []);
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <View style={styles.container}>
+      {selectedQuake ? (
+        <>
+          <View style={styles.mapContainer}>
+            <MapView
+              style={styles.map}
+              initialRegion={{
+                latitude: selectedQuake.geometry.coordinates[1],
+                longitude: selectedQuake.geometry.coordinates[0],
+                latitudeDelta: 1,
+                longitudeDelta: 1,
+              }}
+            >
+              <Marker
+                coordinate={{
+                  latitude: selectedQuake.geometry.coordinates[1],
+                  longitude: selectedQuake.geometry.coordinates[0],
+                }}
+                title={`Magnitude: ${selectedQuake.properties.mag}`}
+                description={selectedQuake.properties.place}
+              />
+            </MapView>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setSelectedQuake(null)}
+            >
+              <Icon name="arrow-back" size={30} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {/* Info section updated to show specific earthquake details */}
+          <View style={styles.infoSection}>
+            <ThemedText type="subtitle" style={styles.infoText}>
+              Earthquake Details
+            </ThemedText>
+            <ThemedText style={styles.infoText}>
+              Magnitude: {selectedQuake.properties.mag}
+            </ThemedText>
+            <ThemedText style={styles.infoText}>
+              Location: {selectedQuake.properties.place}
+            </ThemedText>
+            <ThemedText style={styles.infoText}>
+              Time: {moment(selectedQuake.properties.time).format("llll")}
+            </ThemedText>
+            <ThemedText style={styles.infoText}>
+              Depth: {selectedQuake.geometry.coordinates[2]} km
+            </ThemedText>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={styles.header}>
+            <Image
+              // source={require("@/assets/images/earthquake-logo.png")}
+              style={styles.reactLogo}
+            />
+            <ThemedText type="title">Earthquake Alerts</ThemedText>
+            <HelloWave />
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.scrollViewContent}
+            style={{ paddingBottom: selectedQuake ? 200 : 0 }}
+          >
+            {" "}
+            {/* Adjust padding based on selection */}
+            {earthquakes.length > 0 ? (
+              earthquakes.map((quake) => (
+                <TouchableOpacity
+                  key={quake.id}
+                  style={styles.stepContainer}
+                  onPress={() => setSelectedQuake(quake)}
+                >
+                  <ThemedText type="subtitle" style={styles.quakeText}>
+                    Magnitude: {quake.properties.mag} - Location:{" "}
+                    {quake.properties.place}
+                  </ThemedText>
+                  {/* Use moment to format time */}
+                  <ThemedText style={styles.quakeText}>
+                    {moment(quake.properties.time).format("llll")}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <ThemedView style={styles.stepContainer}>
+                <ThemedText style={styles.quakeText}>
+                  No recent earthquakes detected.
+                </ThemedText>
+              </ThemedView>
+            )}
+            <ThemedView style={styles.stepContainer}>
+              <ThemedText type="subtitle">Stay Safe!</ThemedText>
+              <ThemedText>
+                Make sure you know what to do in case of an earthquake. Stay
+                calm and follow safety protocols.
+              </ThemedText>
+            </ThemedView>
+          </ScrollView>
+        </>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+  },
+  header: {
+    paddingTop: 40,
+    paddingBottom: 20,
+    paddingHorizontal: 16,
+    backgroundColor: "#A1CEDC",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#ddd",
   },
   stepContainer: {
     gap: 8,
     marginBottom: 8,
+    padding: 16,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginVertical: 8,
   },
   reactLogo: {
-    height: 178,
-    width: 290,
+    height: 60,
+    width: 100,
+    marginBottom: 16,
+  },
+  scrollViewContent: {
+    paddingVertical: 20,
+    paddingBottom: 200, // Extra space for info section when an earthquake is selected
+  },
+  quakeText: {
+    color: "#0d2047",
+  },
+  mapContainer: {
+    flex: 1,
+    position: "relative", // Ensure positioning context for absolute elements
+  },
+  map: {
+    flex: 1,
+  },
+  backButton: {
+    position: "absolute",
+    top: 40,
+    left: 16,
+    backgroundColor: "#000",
+    padding: 10,
+    borderRadius: 20,
+    zIndex: 10, // Ensure button is above other elements
+  },
+
+  // Info section positioned at the bottom of the screen
+  infoSection: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#ddd",
+    position: "absolute",
     bottom: 0,
     left: 0,
-    position: 'absolute',
+    right: 0,
+    marginBottom: 0,
+    paddingBottom: 60,
+  },
+
+  infoText: {
+    color: "#0d2047",
   },
 });
