@@ -4,9 +4,11 @@ import {
   ScrollView,
   TouchableOpacity,
   View,
+  Alert,
 } from "react-native";
 import { useEffect, useState } from "react";
-import PushNotification from "react-native-push-notification"; // Import push notification
+import * as Notifications from "expo-notifications";
+import * as Permissions from "expo-permissions";
 import { HelloWave } from "@/components/HelloWave";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -14,16 +16,32 @@ import MapView, { Marker } from "react-native-maps";
 import Icon from "react-native-vector-icons/Ionicons";
 import moment from "moment"; // Import moment
 
-// Configure Push Notifications
-PushNotification.configure({
-  onNotification: function (notification) {
-    console.log("NOTIFICATION:", notification);
-  },
-});
-
 export default function HomeScreen() {
   const [earthquakes, setEarthquakes] = useState([]);
   const [selectedQuake, setSelectedQuake] = useState(null);
+  const [expoPushToken, setExpoPushToken] = useState("");
+
+  // Request permissions and get the Expo push token
+  const registerForPushNotificationsAsync = async () => {
+    const { status: existingStatus } = await Permissions.getAsync(
+      Permissions.NOTIFICATIONS
+    );
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== "granted") {
+      const { status } = await Permissions.askAsync(Permissions.NOTIFICATIONS);
+      finalStatus = status;
+    }
+
+    if (finalStatus !== "granted") {
+      Alert.alert("Failed to get push token for push notification!");
+      return;
+    }
+
+    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    console.log("Expo Push Token:", token); // Store this token for sending notifications
+    setExpoPushToken(token);
+  };
 
   const fetchEarthquakes = async () => {
     try {
@@ -48,17 +66,40 @@ export default function HomeScreen() {
     }
   };
 
-  const sendNotification = (quake) => {
-    PushNotification.localNotification({
-      title: "Earthquake Alert!",
-      message: `Magnitude: ${quake.properties.mag} at ${quake.properties.place}`,
-      playSound: true,
-      soundName: "default",
+  // Function to send a test notification
+  const sendTestNotification = async () => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Test Notification",
+        body: "This is a test notification",
+      },
+      trigger: null, // Send immediately
+    });
+  };
+
+  const sendNotification = async (quake) => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Earthquake Alert!",
+        body: `Magnitude: ${quake.properties.mag} at ${quake.properties.place}`,
+        data: { quake },
+      },
+      trigger: null, // Send immediately
     });
   };
 
   useEffect(() => {
+    const fetchTokenAndTest = async () => {
+      const token = await registerForPushNotificationsAsync();
+      if (token) {
+        setExpoPushToken(token);
+        sendTestNotification(); // Test notification
+      }
+    };
+
+    fetchTokenAndTest();
     fetchEarthquakes();
+
     const interval = setInterval(fetchEarthquakes, 60000); // Fetch new data every minute
     return () => clearInterval(interval); // Cleanup interval on unmount
   }, []);
